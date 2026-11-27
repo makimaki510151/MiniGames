@@ -10,7 +10,7 @@ import {
   forfeitMatch,
   gameById,
   publicMatch,
-  suggestTtt,
+  suggestC4,
   tickMatch,
 } from './games.js';
 
@@ -262,11 +262,11 @@ function planKey(tableId, side) {
 function sigOf(table) {
   const m = table.match;
   if (!m || m.phase === 'done') return `idle:${table.votes.a || ''}:${table.votes.b || ''}:${m?.winner || ''}`;
-  if (m.game === 'rps') return `rps:${m.phase}:${m.round}:${m.picks.a || ''}:${m.picks.b || ''}`;
+  if (m.game === 'acchi') return `acchi:${m.phase}:${m.round}:${m.picks.a || ''}:${m.picks.b || ''}:${m.rpsWinner || ''}`;
   if (m.game === 'react') return `react:${m.phase}:${m.round}`;
-  if (m.game === 'ttt') return `ttt:${m.turn}:${m.board.join('')}`;
+  if (m.game === 'c4') return `c4:${m.turn}:${m.board.join('')}`;
   if (m.game === 'hilow') return `hilow:${m.phase}:${m.current}:${m.picks.a || ''}:${m.picks.b || ''}`;
-  return `mash:${m.phase}`;
+  return `${m.game}:${m.phase}`;
 }
 
 function driveCpu(room, now) {
@@ -286,12 +286,8 @@ function driveOneCpu(room, table, side, player, now) {
   const idle = !match || match.phase === 'done';
   if (idle) return driveCpuVote(room, table, side, player, now);
 
-  if (match.game === 'mash' && match.phase === 'play') {
-    const rate = player.cpuRate ?? 0.7;
-    if (room.rng() >= rate) return false;
-    const res = applyMatchInput(match, side, { tap: 1 }, now);
-    return !!res.changed;
-  }
+  if (match.game === 'hockey' && match.phase === 'play') return driveHockeyCpu(match, side);
+  if (match.game === 'bound' && match.phase === 'play') return driveBoundCpu(match, side);
 
   const key = planKey(table.id, side);
   const signature = sigOf(table);
@@ -342,19 +338,43 @@ function driveCpuVote(room, table, side, player, now) {
   return true;
 }
 
+function driveHockeyCpu(match, side) {
+  const incoming = match.balls
+    .filter((ball) => (side === 'a' ? ball.vy < 0 : ball.vy > 0))
+    .sort((p, q) => (side === 'a' ? p.y - q.y : q.y - p.y));
+  const target = incoming[0] || match.balls[0];
+  if (!target) return false;
+  const goal = Math.max(0, Math.min(100, target.x));
+  const cur = match.paddles[side];
+  const step = 22;
+  const next = Math.abs(goal - cur) <= step ? goal : cur + Math.sign(goal - cur) * step;
+  return !!applyMatchInput(match, side, { x: next }, 0).changed;
+}
+
+function driveBoundCpu(match, side) {
+  const mine = match.balls.filter((ball) => ball.side === side && ball.y > 42);
+  if (!mine.length) return false;
+  mine.sort((p, q) => q.y - p.y);
+  return !!applyMatchInput(match, side, { id: mine[0].id }, 0).changed;
+}
+
 function makeCpuPlan(room, match, side, now, signature) {
   const wait = 350 + Math.floor(room.rng() * 450);
-  if (match.game === 'rps' && match.phase === 'pick' && !match.picks[side]) {
+  if (match.game === 'acchi' && match.phase === 'rps' && !match.picks[side]) {
     const hands = ['rock', 'scissors', 'paper'];
     return { sig: signature, at: now + wait, input: { choice: hands[Math.floor(room.rng() * 3)] } };
+  }
+  if (match.game === 'acchi' && match.phase === 'aim' && !match.picks[side]) {
+    const dirs = ['up', 'down', 'left', 'right'];
+    return { sig: signature, at: now + wait, input: { dir: dirs[Math.floor(room.rng() * 4)] } };
   }
   if (match.game === 'react' && match.phase === 'go') {
     return { sig: signature, at: now + 220 + Math.floor(room.rng() * 320), input: { tap: 1 } };
   }
-  if (match.game === 'ttt' && match.phase === 'play' && match.turn === side) {
-    const cell = suggestTtt(match.board, side, room.rng);
-    if (cell == null) return null;
-    return { sig: signature, at: now + wait, input: { cell } };
+  if (match.game === 'c4' && match.phase === 'play' && match.turn === side) {
+    const col = suggestC4(match.board, side, room.rng);
+    if (col == null) return null;
+    return { sig: signature, at: now + wait, input: { col } };
   }
   if (match.game === 'hilow' && match.phase === 'pick' && !match.picks[side]) {
     const choice = match.current >= 8 ? 'low' : 'high';

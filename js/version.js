@@ -3,4 +3,4 @@
  * プロトコルや入室条件を変えたら上げる。
  * ホストとゲストで一致しない部屋には入れない（MkMk Street と同じ考え方）。
  */
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '0.2.0';

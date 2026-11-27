@@ -65,7 +65,7 @@ test('同じ名前の切断者は席を保ったまま戻れる', () => {
   assert.equal(back.reclaimed, true);
   assert.equal(back.player.id, guest.id);
   assert.equal(back.player.seat.side, 'b');
-  assert.equal(applyAction(r, guest.id, { type: 'vote', gameId: 'ttt' }, 2000).ok, true);
+  assert.equal(applyAction(r, guest.id, { type: 'vote', gameId: 'c4' }, 2000).ok, true);
 });
 
 test('席は1人1つ。観戦者の操作は拒否され、卓の状態は見える', () => {
@@ -78,12 +78,12 @@ test('席は1人1つ。観戦者の操作は拒否され、卓の状態は見え
   applyAction(r, b.id, { type: 'sit', table: 1, side: 'b' }, 0);
   assert.equal(applyAction(r, watcher.id, { type: 'sit', table: 1, side: 'a' }, 0).error, 'その席は埋まっています');
 
-  applyAction(r, a.id, { type: 'vote', gameId: 'rps' }, 0);
+  applyAction(r, a.id, { type: 'vote', gameId: 'acchi' }, 0);
   assert.equal(r.tables[1].match, null);
-  applyAction(r, b.id, { type: 'vote', gameId: 'ttt' }, 0);
+  applyAction(r, b.id, { type: 'vote', gameId: 'c4' }, 0);
   assert.equal(r.tables[1].match, null);
-  applyAction(r, b.id, { type: 'vote', gameId: 'rps' }, 0);
-  assert.equal(r.tables[1].match.game, 'rps');
+  applyAction(r, b.id, { type: 'vote', gameId: 'acchi' }, 0);
+  assert.equal(r.tables[1].match.game, 'acchi');
 
   applyAction(r, a.id, { type: 'input', input: { choice: 'rock' } }, 10);
   const snap = snapshot(r, 10);
@@ -106,8 +106,8 @@ test('立席は不戦敗。30秒切断でも席を外して不戦敗', () => {
   const b = join(r, 'b', 'あお');
   applyAction(r, a.id, { type: 'sit', table: 0, side: 'a' }, 0);
   applyAction(r, b.id, { type: 'sit', table: 0, side: 'b' }, 0);
-  applyAction(r, a.id, { type: 'vote', gameId: 'ttt' }, 0);
-  applyAction(r, b.id, { type: 'vote', gameId: 'ttt' }, 0);
+  applyAction(r, a.id, { type: 'vote', gameId: 'c4' }, 0);
+  applyAction(r, b.id, { type: 'vote', gameId: 'c4' }, 0);
   applyAction(r, b.id, { type: 'stand' }, 50);
   assert.equal(r.tables[0].match.winner, 'a');
   assert.equal(r.tables[0].match.reason, 'forfeit');
@@ -116,9 +116,9 @@ test('立席は不戦敗。30秒切断でも席を外して不戦敗', () => {
 
   applyAction(r, b.id, { type: 'sit', table: 2, side: 'a' }, 60);
   applyAction(r, a.id, { type: 'sit', table: 2, side: 'b' }, 60);
-  applyAction(r, a.id, { type: 'vote', gameId: 'ttt' }, 60);
-  applyAction(r, b.id, { type: 'vote', gameId: 'ttt' }, 60);
-  assert.equal(r.tables[2].match.game, 'ttt');
+  applyAction(r, a.id, { type: 'vote', gameId: 'c4' }, 60);
+  applyAction(r, b.id, { type: 'vote', gameId: 'c4' }, 60);
+  assert.equal(r.tables[2].match.game, 'c4');
   disconnectPeer(r, 'b', 100);
   tick(r, 100 + DISCONNECT_GRACE_MS);
   assert.equal(r.players.some((p) => p.id === b.id), false);
@@ -171,7 +171,7 @@ test('4卓を同時に対局でき、スナップショットに秘密の山札�
   const host = r.players[0];
   const mates = [];
   for (let i = 0; i < 7; i++) mates.push(join(r, `p${i}`, `人${i}`));
-  const games = ['rps', 'react', 'ttt', 'hilow'];
+  const games = ['acchi', 'react', 'c4', 'hilow'];
   for (let t = 0; t < 4; t++) {
     const left = t === 0 ? host : mates[t * 2 - 1];
     const right = mates[t === 0 ? 0 : t * 2];

@@ -5,7 +5,7 @@
 
 import { APP_VERSION } from './version.js';
 import { createNet } from './net.js';
-import { GAME_LIST, rankLabel, rpsLabel } from './games.js';
+import { GAME_LIST, dirLabel, handLabel, rankLabel } from './games.js';
 import {
   COLORS,
   acceptHello,
@@ -36,6 +36,9 @@ const app = {
   urgentKey: '',
   standArmed: null,
   hands: {},
+  snapAt: 0,
+  hockeyDrag: false,
+  lastPaddle: null,
   connecting: false,
   prevPhase: {},
 };
@@ -161,6 +164,7 @@ function applySnap(snap) {
   noteTransitions(app.snap, snap);
   app.snap = snap;
   app.clockOffset = snap.serverNow - Date.now();
+  app.snapAt = Date.now();
   clearStaleHands();
   if (app.screen === 'screen-room') renderRoom();
 }
@@ -170,7 +174,12 @@ function clearStaleHands() {
   if (!me?.seat) return;
   const table = app.snap.tables[me.seat.table];
   if (!table) return;
-  const locked = table.match?.phase === 'pick' && table.match.locked?.[me.seat.side];
+  const match = table.match;
+  const choosing = match && (
+    (match.game === 'hilow' && match.phase === 'pick')
+    || (match.game === 'acchi' && (match.phase === 'rps' || match.phase === 'aim'))
+  );
+  const locked = choosing && match.locked?.[me.seat.side];
   if (!locked) delete app.hands[table.id];
 }
 
@@ -204,9 +213,10 @@ function resultLine(table) {
 
 function scoreBits(match) {
   if (!match) return '';
+  if (match.misses) return `逃 ${match.misses.a}–${match.misses.b}`;
+  if (match.drops) return `落 ${match.drops.a}–${match.drops.b}`;
   if (match.scores) return `${match.scores.a} – ${match.scores.b}`;
-  if (match.counts) return `${match.counts.a} – ${match.counts.b}`;
-  if (match.game === 'ttt') return match.phase === 'done' ? '' : '対局中';
+  if (match.game === 'c4') return match.phase === 'done' ? '' : '対局中';
   return '';
 }
 
@@ -230,14 +240,33 @@ function renderRoom() {
   patchLive();
 }
 
+function stageView(match) {
+  if (!match) return null;
+  if (match.game === 'hockey') {
+    return {
+      game: 'hockey',
+      phase: match.phase,
+      misses: match.misses,
+      winner: match.winner,
+      reason: match.reason,
+    };
+  }
+  if (match.game === 'bound') {
+    return {
+      game: 'bound',
+      phase: match.phase,
+      drops: match.drops,
+      winner: match.winner,
+      reason: match.reason,
+      balls: match.balls.map((ball) => `${ball.id}:${ball.side}`),
+    };
+  }
+  return match;
+}
+
 function stageSignature() {
   const table = app.snap.tables[app.focus];
-  const match = table?.match;
-  const live = match && match.game === 'mash' ? {
-    ...match,
-    counts: undefined,
-    endAt: undefined,
-  } : match;
+  const live = stageView(table?.match);
   return JSON.stringify({
     focus: app.focus,
     you: app.youId,
@@ -263,7 +292,7 @@ function renderTables() {
           <span class="table-name">${esc(table.name)}</span>
           ${miniSeat(table.seats.a)}
           ${miniSeat(table.seats.b)}
-          <span class="table-state" ${table.match?.game === 'mash' ? `data-live-count="${table.id}"` : ''}>${esc(state)}</span>
+          <span class="table-state">${esc(state)}</span>
         </span>
       </button>`;
   }).join('');
@@ -329,11 +358,12 @@ function renderUrgent() {
   const table = app.snap.tables[me.seat.table];
   el.hidden = false;
   if (sig.startsWith('tap')) {
-    const label = table.match.phase === 'go' ? '今だ！' : '連打';
+    const label = table.match.phase === 'go' ? '今だ！' : '押せます';
     el.innerHTML = `<button type="button" class="urgent-tap" data-act="input" data-choice="tap" data-table="${table.id}">${esc(table.name)} · ${label}</button>`;
     return;
   }
-  el.innerHTML = `<button type="button" class="urgent-back" data-act="focus" data-table="${table.id}">${esc(table.name)}であなたの番です</button>`;
+  const label = sig.startsWith('live') ? `${table.name}で対局中 · 戻る` : `${table.name}であなたの番です`;
+  el.innerHTML = `<button type="button" class="urgent-back" data-act="focus" data-table="${table.id}">${esc(label)}</button>`;
 }
 
 function urgentSignature() {
@@ -344,11 +374,14 @@ function urgentSignature() {
   if (!match || match.phase === 'done') return '';
   if (app.focus === table.id) return '';
   const side = me.seat.side;
-  if (match.game === 'mash' && match.phase === 'play') return `tap:mash:${table.id}`;
   if (match.game === 'react' && (match.phase === 'go' || match.phase === 'wait')) return `tap:react:${table.id}:${match.round}:${match.phase}`;
-  if (match.game === 'ttt' && match.turn === side) return `back:ttt:${table.id}:${match.board.join('')}`;
-  if ((match.game === 'rps' || match.game === 'hilow') && match.phase === 'pick' && !match.locked[side]) {
-    return `back:${match.game}:${table.id}:${match.round || match.current}`;
+  if (match.game === 'hockey' || match.game === 'bound') return `live:${match.game}:${table.id}`;
+  if (match.game === 'c4' && match.turn === side) return `back:c4:${table.id}:${match.board.join('')}`;
+  if (match.game === 'acchi' && (match.phase === 'rps' || match.phase === 'aim') && !match.locked[side]) {
+    return `back:acchi:${table.id}:${match.phase}:${match.round}`;
+  }
+  if (match.game === 'hilow' && match.phase === 'pick' && !match.locked[side]) {
+    return `back:hilow:${table.id}:${match.current}`;
   }
   return '';
 }
@@ -415,7 +448,7 @@ function lobbyHtml(table, me) {
   }
   const side = mySide(table);
   const done = table.match?.phase === 'done';
-  const head = done && table.match.game !== 'ttt'
+  const head = done && table.match.game !== 'c4'
     ? `<div class="result"><b>${esc(resultLine(table))}</b></div>`
     : '';
   if (!side) {
@@ -440,12 +473,13 @@ function lobbyHtml(table, me) {
 
 function matchHtml(table, side) {
   const match = table.match;
-  if (match.phase === 'done' && match.game !== 'ttt') return '';
-  if (match.game === 'rps') return htmlRps(table, side);
+  if (match.phase === 'done' && match.game !== 'c4') return '';
+  if (match.game === 'acchi') return htmlAcchi(table, side);
   if (match.game === 'react') return htmlReact(table, side);
-  if (match.game === 'ttt') return htmlTtt(table, side);
+  if (match.game === 'c4') return htmlC4(table, side);
   if (match.game === 'hilow') return htmlHilow(table, side);
-  if (match.game === 'mash') return htmlMash(table, side);
+  if (match.game === 'hockey') return htmlHockey(table, side);
+  if (match.game === 'bound') return htmlBound(table, side);
   return '';
 }
 
@@ -453,28 +487,60 @@ function nameOf(table, side) {
   return table.seats[side]?.name || (side === 'a' ? '左' : '右');
 }
 
-function htmlRps(table, side) {
-  const match = table.match;
-  const score = `<div class="scoreline"><span>${esc(nameOf(table, 'a'))} ${match.scores.a}</span><span>${match.round}本目</span><span>${match.scores.b} ${esc(nameOf(table, 'b'))}</span></div>`;
-  if (match.phase === 'reveal' && match.reveal) {
-    return `${score}<div class="reveal-row">
-      <div>${esc(nameOf(table, 'a'))}<b>${esc(rpsLabel(match.reveal.a))}</b></div>
-      <div>${esc(nameOf(table, 'b'))}<b>${esc(rpsLabel(match.reveal.b))}</b></div>
-    </div><p class="hint">${match.reveal.result === 'draw' ? 'あいこ' : `${esc(nameOf(table, match.reveal.result))} の一本`}</p>`;
-  }
-  const locked = ['a', 'b'].map((s) => {
+function lockLine(table, side, match, labelOf) {
+  return ['a', 'b'].map((s) => {
     const who = esc(nameOf(table, s));
     if (!match.locked[s]) return `${who} 考え中`;
-    if (s === side && app.hands[table.id]) return `${who} ${esc(rpsLabel(app.hands[table.id]))}`;
+    if (s === side && app.hands[table.id]) return `${who} ${esc(labelOf(app.hands[table.id]))}`;
     return `${who} 確定`;
   }).join(' · ');
+}
+
+function htmlAcchi(table, side) {
+  const match = table.match;
+  const score = `<div class="scoreline"><span>${esc(nameOf(table, 'a'))} ${match.scores.a}</span><span>${match.round}回目</span><span>${match.scores.b} ${esc(nameOf(table, 'b'))}</span></div>`;
+  if (match.phase === 'rpsShow' && match.reveal) {
+    const note = match.reveal.result === 'draw'
+      ? 'あいこ。もう一度じゃんけん。'
+      : `${esc(nameOf(table, match.reveal.result))} の勝ち。次は方向です。`;
+    return `${score}<div class="reveal-row">
+      <div>${esc(nameOf(table, 'a'))}<b>${esc(handLabel(match.reveal.a))}</b></div>
+      <div>${esc(nameOf(table, 'b'))}<b>${esc(handLabel(match.reveal.b))}</b></div>
+    </div><p class="hint">${note}</p>`;
+  }
+  if (match.phase === 'aimShow' && match.reveal) {
+    const role = (s) => (match.duty?.[s] === 'guess' ? '予想' : '向き');
+    const note = match.reveal.hit
+      ? `${esc(nameOf(table, match.reveal.guesser))} が当てた`
+      : 'はずれ。点は入りません。';
+    return `${score}<div class="reveal-row">
+      <div>${esc(nameOf(table, 'a'))}<b>${esc(dirLabel(match.reveal.a))}</b><small>${role('a')}</small></div>
+      <div>${esc(nameOf(table, 'b'))}<b>${esc(dirLabel(match.reveal.b))}</b><small>${role('b')}</small></div>
+    </div><p class="hint">${note}</p>`;
+  }
+  if (match.phase === 'aim') {
+    const duty = side ? match.duty?.[side] : null;
+    const role = duty === 'face'
+      ? 'じゃんけんに負けました。向く方向を選んでください。'
+      : duty === 'guess'
+        ? 'じゃんけんに勝ちました。相手の向く方向を当ててください。'
+        : '負けた人が向き、勝った人が当てます。';
+    const controls = side && !match.locked[side] ? `
+      <div class="hands dirs">
+        <button type="button" class="hand" data-act="input" data-dir="up" data-table="${table.id}">上</button>
+        <button type="button" class="hand" data-act="input" data-dir="down" data-table="${table.id}">下</button>
+        <button type="button" class="hand" data-act="input" data-dir="left" data-table="${table.id}">左</button>
+        <button type="button" class="hand" data-act="input" data-dir="right" data-table="${table.id}">右</button>
+      </div>` : '';
+    return `${score}<p class="hint">${role}${lockLine(table, side, match, dirLabel)}。2本先取。</p>${controls}`;
+  }
   const controls = side && !match.locked[side] ? `
     <div class="hands">
       <button type="button" class="hand" data-act="input" data-choice="rock" data-table="${table.id}">グー</button>
       <button type="button" class="hand" data-act="input" data-choice="scissors" data-table="${table.id}">チョキ</button>
       <button type="button" class="hand" data-act="input" data-choice="paper" data-table="${table.id}">パー</button>
     </div>` : '';
-  return `${score}<p class="hint">${locked}。2本先取。</p>${controls}`;
+  return `${score}<p class="hint">${lockLine(table, side, match, handLabel)}。じゃんけんのあと、方向を当てます。2本先取。</p>${controls}`;
 }
 
 function htmlReact(table, side) {
@@ -495,22 +561,32 @@ function htmlReact(table, side) {
   return `${score}${lamp}<p class="hint">${esc(note)}</p>`;
 }
 
-function htmlTtt(table, side) {
+function htmlC4(table, side) {
   const match = table.match;
   const done = match.phase === 'done' ? `<div class="result"><b>${esc(resultLine(table))}</b></div>` : '';
   const turn = match.phase === 'play'
-    ? (side === match.turn ? 'あなたの番です' : `${nameOf(table, match.turn)} の番`)
+    ? (side === match.turn ? 'あなたの番です。列を選ぶと駒が落ちます。' : `${nameOf(table, match.turn)} の番`)
     : '';
-  const cells = match.board.map((owner, i) => {
-    const win = match.line?.includes(i) ? ' is-win' : '';
-    const mark = owner === 'a' ? '×' : owner === 'b' ? '○' : '';
-    const color = owner ? safeColor(table.seats[owner]?.color) : '';
-    if (side && match.phase === 'play' && match.turn === side && !owner) {
-      return `<button type="button" class="cell${win}" style="color:${color}" data-act="input" data-cell="${i}" data-table="${table.id}" aria-label="マス${i + 1}"></button>`;
+  const heads = [];
+  const cells = [];
+  for (let col = 0; col < match.cols; col++) {
+    const full = !!match.board[col];
+    if (side && match.phase === 'play' && match.turn === side && !full) {
+      heads.push(`<button type="button" class="c4-drop" data-act="input" data-col="${col}" data-table="${table.id}" aria-label="${col + 1}列目に落とす">↓</button>`);
+    } else {
+      heads.push('<div class="c4-drop is-quiet"></div>');
     }
-    return `<div class="cell${win}" style="color:${color}">${mark}</div>`;
-  }).join('');
-  return `${done}<p class="hint">${esc(turn)} ${esc(nameOf(table, 'a'))}が×、${esc(nameOf(table, 'b'))}が○。</p><div class="board">${cells}</div>`;
+  }
+  for (let row = 0; row < match.rows; row++) {
+    for (let col = 0; col < match.cols; col++) {
+      const i = row * match.cols + col;
+      const owner = match.board[i];
+      const win = match.line?.includes(i) ? ' is-win' : '';
+      const color = owner ? safeColor(table.seats[owner]?.color) : '#efe4d2';
+      cells.push(`<div class="c4-cell${owner ? ' is-on' : ''}${win}" style="--pc:${color}"></div>`);
+    }
+  }
+  return `${done}<p class="hint">${esc(turn)} 先に4つ揃えた方の勝ち。</p><div class="c4"><div class="c4-cols">${heads.join('')}</div><div class="c4-grid">${cells.join('')}</div></div>`;
 }
 
 function htmlHilow(table, side) {
@@ -538,46 +614,125 @@ function htmlHilow(table, side) {
   return `${score}<div class="playing-card" aria-hidden="true">${esc(card)}</div><p class="hint">${esc(note)}</p>${controls}`;
 }
 
-function htmlMash(table, side) {
+function htmlHockey(table, side) {
   const match = table.match;
-  if (match.phase === 'done') return '';
-  const bar = (s) => {
-    const color = safeColor(table.seats[s]?.color);
-    return `<div class="mash-side">
-      <div class="scoreline"><span>${esc(nameOf(table, s))}</span><b id="count-${s}">${match.counts[s]}</b></div>
-      <div class="bar-track"><div class="bar-fill" id="bar-${s}" style="--pc:${color}"></div></div>
-    </div>`;
-  };
-  const button = side
-    ? `<button type="button" class="mash-btn" data-act="input" data-choice="tap" data-table="${table.id}">連打</button>`
-    : '<p class="hint">観戦中です。タップは席の二人だけ。</p>';
-  return `<p class="clock" id="mash-clock">6.0</p>${bar('a')}${bar('b')}${button}`;
+  const miss = (s) => `${esc(nameOf(table, s))} 逃し ${match.misses[s]}/${match.limit}`;
+  const hint = side
+    ? '板を左右にスライドして跳ね返す。速さは一定で、球は増えます。3回逃すと負け。'
+    : '観戦中です。板は席の二人だけが動かせます。';
+  return `<div class="scoreline"><span>${miss('a')}</span><span id="hockey-count">${match.balls.length}球</span><span>${miss('b')}</span></div>
+    <canvas id="hockey-canvas" class="hockey-canvas" width="640" height="400"></canvas>
+    <p class="hint">${hint}</p>`;
+}
+
+function htmlBound(table, side) {
+  const match = table.match;
+  const order = side === 'b' ? ['a', 'b'] : ['b', 'a'];
+  const lanes = order.map((s) => `
+    <div class="bound-lane${s === side ? ' is-mine' : ''}">
+      <p class="scoreline"><span>${esc(nameOf(table, s))}</span><span>落とし ${match.drops[s]}/${match.limit}</span></p>
+      <div class="bound-field" id="bound-field-${s}"></div>
+    </div>`).join('');
+  const hint = side
+    ? '自分の側に落ちてくる球を押すと、相手側の上から落ちていきます。3個落とすと負け。'
+    : '観戦中です。球を押せるのは席の二人だけです。';
+  return `${lanes}<p class="hint">${hint}</p>`;
+}
+
+function liveElapsed() {
+  return Math.max(0, Math.min(0.16, (Date.now() - (app.snapAt || Date.now())) / 1000));
 }
 
 function patchLive() {
   const table = app.snap?.tables[app.focus];
   const match = table?.match;
-  if (match?.game === 'mash' && match.phase === 'play') {
-    for (const side of ['a', 'b']) {
-      const count = document.getElementById(`count-${side}`);
-      const bar = document.getElementById(`bar-${side}`);
-      if (count) count.textContent = String(match.counts[side]);
-      if (bar) {
-        const max = Math.max(8, match.counts.a, match.counts.b);
-        bar.style.transform = `scaleX(${match.counts[side] / max})`;
+  if (!match || match.phase === 'done') return;
+  if (match.game === 'hockey') drawHockey(table, match);
+  if (match.game === 'bound') patchBound(table, match);
+}
+
+function drawHockey(table, match) {
+  const canvas = document.getElementById('hockey-canvas');
+  if (!canvas) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = canvas.clientWidth || 640;
+  const h = canvas.clientHeight || Math.round(w * 0.62);
+  const pw = Math.floor(w * dpr);
+  const ph = Math.floor(h * dpr);
+  if (canvas.width !== pw || canvas.height !== ph) {
+    canvas.width = pw;
+    canvas.height = ph;
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#123c86';
+  ctx.fillRect(0, 0, w, h);
+  const gy = (logical) => (1 - logical / 100) * h;
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(0, gy(4), w, h - gy(4));
+  ctx.fillRect(0, 0, w, gy(96));
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(10, h / 2);
+  ctx.lineTo(w - 10, h / 2);
+  ctx.stroke();
+  const elapsed = liveElapsed();
+  for (const side of ['a', 'b']) {
+    const py = side === 'a' ? 14 : 86;
+    const px = match.paddles[side];
+    const paddleW = (match.paddleW / 100) * w;
+    const cx = (px / 100) * w;
+    const cy = gy(py);
+    ctx.fillStyle = safeColor(table.seats[side]?.color);
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cx - paddleW / 2, cy - 6, paddleW, 12, 6);
+    else ctx.rect(cx - paddleW / 2, cy - 6, paddleW, 12);
+    ctx.fill();
+  }
+  for (const ball of match.balls) {
+    const x = ball.x + ball.vx * elapsed;
+    const y = ball.y + ball.vy * elapsed;
+    ctx.beginPath();
+    ctx.fillStyle = '#f7fbff';
+    ctx.arc((x / 100) * w, gy(y), Math.max(6, w * 0.018), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const count = document.getElementById('hockey-count');
+  if (count) count.textContent = `${match.balls.length}球`;
+}
+
+function patchBound(table, match) {
+  const side = mySide(table);
+  const elapsed = liveElapsed();
+  const seen = new Set();
+  for (const ball of match.balls) {
+    const field = document.getElementById(`bound-field-${ball.side}`);
+    if (!field) continue;
+    seen.add(ball.id);
+    let el = document.querySelector(`[data-ball-id="${ball.id}"]`);
+    const mine = ball.side === side;
+    if (!el || (mine && el.tagName !== 'BUTTON') || (!mine && el.tagName !== 'DIV') || el.parentElement !== field) {
+      el?.remove();
+      el = document.createElement(mine ? 'button' : 'div');
+      el.className = 'bound-ball';
+      el.dataset.ballId = String(ball.id);
+      if (mine) {
+        el.type = 'button';
+        el.dataset.act = 'input';
+        el.dataset.ball = String(ball.id);
+        el.dataset.table = String(table.id);
+        el.setAttribute('aria-label', '球を跳ね返す');
       }
+      field.appendChild(el);
     }
-    const clock = document.getElementById('mash-clock');
-    if (clock) {
-      const left = Math.max(0, match.endAt - (Date.now() + app.clockOffset));
-      clock.textContent = (left / 1000).toFixed(1);
-    }
+    el.style.left = `${ball.x}%`;
+    el.style.top = `${Math.min(100, ball.y + (match.fall || 22) * elapsed)}%`;
   }
-  for (const t of app.snap?.tables || []) {
-    if (t.match?.game !== 'mash' || t.match.phase === 'done') continue;
-    const el = document.querySelector(`[data-live-count="${t.id}"]`);
-    if (el) el.textContent = `連打 ${t.match.counts.a} – ${t.match.counts.b}`;
-  }
+  document.querySelectorAll('[data-ball-id]').forEach((el) => {
+    if (!seen.has(Number(el.dataset.ballId))) el.remove();
+  });
 }
 
 function sendAction(action) {
@@ -601,11 +756,46 @@ function emitTap(table) {
 }
 
 function onRoomPointer(event) {
+  if (event.target.closest?.('#hockey-canvas')) {
+    app.hockeyDrag = true;
+    event.preventDefault();
+    sendPaddle(event);
+    return;
+  }
   const el = event.target.closest('[data-choice="tap"]');
   if (!el || event.button > 0 || event.isPrimary === false) return;
   event.preventDefault();
   lastPointerTap = Date.now();
   emitTap(el.dataset.table);
+}
+
+function onRoomPointerMove(event) {
+  const canvas = document.getElementById('hockey-canvas');
+  if (!canvas) return;
+  const over = event.target === canvas || canvas.contains(event.target);
+  if (event.pointerType === 'touch') {
+    if (!app.hockeyDrag) return;
+  } else if (!over && !app.hockeyDrag) return;
+  else if (!over && !event.buttons) {
+    app.hockeyDrag = false;
+    return;
+  }
+  sendPaddle(event, canvas);
+}
+
+function sendPaddle(event, canvas) {
+  canvas = canvas || document.getElementById('hockey-canvas');
+  if (!canvas) return;
+  const table = app.snap?.tables[app.focus];
+  const side = mySide(table);
+  if (!side || table.match?.game !== 'hockey' || table.match.phase !== 'play') return;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width) return;
+  const x = ((event.clientX - rect.left) / rect.width) * 100;
+  const now = Date.now();
+  if (app.lastPaddle && now - app.lastPaddle.at < 40 && Math.abs(app.lastPaddle.x - x) < 0.8) return;
+  app.lastPaddle = { at: now, x };
+  sendAction({ type: 'input', table: table.id, input: { x } });
 }
 
 function onRoomClick(event) {
@@ -655,8 +845,17 @@ function onRoomClick(event) {
     return;
   }
   if (act === 'input') {
-    if (el.dataset.cell != null) {
-      sendAction({ type: 'input', table, input: { cell: Number(el.dataset.cell) } });
+    if (el.dataset.col != null) {
+      sendAction({ type: 'input', table, input: { col: Number(el.dataset.col) } });
+      return;
+    }
+    if (el.dataset.ball != null) {
+      sendAction({ type: 'input', table, input: { id: Number(el.dataset.ball) } });
+      return;
+    }
+    if (el.dataset.dir) {
+      app.hands[table] = el.dataset.dir;
+      sendAction({ type: 'input', table, input: { dir: el.dataset.dir } });
       return;
     }
     const choice = el.dataset.choice;
@@ -674,18 +873,31 @@ function onKey(event) {
   const match = table?.match;
   if (!match || match.phase === 'done') return;
   if (event.code === 'Space') {
-    if (match.game === 'mash' || match.game === 'react') {
+    if (match.game === 'react') {
       event.preventDefault();
       sendAction({ type: 'input', table: table.id, input: { tap: 1 } });
     }
     return;
   }
-  if (match.game === 'rps' && match.phase === 'pick') {
+  if (match.game === 'acchi' && match.phase === 'rps') {
     const map = { Digit1: 'rock', Digit2: 'scissors', Digit3: 'paper' };
     const choice = map[event.code];
     if (!choice) return;
     app.hands[table.id] = choice;
     sendAction({ type: 'input', table: table.id, input: { choice } });
+  }
+  if (match.game === 'acchi' && match.phase === 'aim') {
+    const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+    const dir = map[event.code];
+    if (!dir) return;
+    event.preventDefault();
+    app.hands[table.id] = dir;
+    sendAction({ type: 'input', table: table.id, input: { dir } });
+  }
+  if (match.game === 'c4' && match.phase === 'play' && match.turn === me.seat.side) {
+    const col = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 }[event.code];
+    if (col == null) return;
+    sendAction({ type: 'input', table: table.id, input: { col } });
   }
   if (match.game === 'hilow' && match.phase === 'pick') {
     const choice = event.code === 'ArrowUp' ? 'high' : event.code === 'ArrowDown' ? 'low' : null;
@@ -948,6 +1160,9 @@ function bind() {
     connectOnline(app.mode === 'guest' ? 'guest' : 'host');
   };
   $('#screen-room').addEventListener('pointerdown', onRoomPointer);
+  $('#screen-room').addEventListener('pointermove', onRoomPointerMove);
+  window.addEventListener('pointerup', () => { app.hockeyDrag = false; });
+  window.addEventListener('pointercancel', () => { app.hockeyDrag = false; });
   $('#screen-room').addEventListener('click', onRoomClick);
   window.addEventListener('keydown', onKey);
   $('#btn-copy').onclick = async () => {

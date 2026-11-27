@@ -276,7 +276,7 @@ button:focus-visible, input:focus-visible {
 .seat-plate strong { font-size: 1.05rem; }
 .seat-plate .sub { color: var(--muted); font-size: 0.78rem; }
 .inline-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip, .game-pick, .hand, .choice, .cell, .lamp, .mash-btn, .stand {
+.chip, .game-pick, .hand, .choice, .cell, .lamp, .c4-drop, .stand {
   border: 1px solid #eadfcd;
   background: #fff;
   color: var(--ink);
@@ -366,32 +366,57 @@ button:focus-visible, input:focus-visible {
 }
 .lamp:disabled { opacity: 1; }
 
-.mash-btn {
-  width: 100%;
-  min-height: 128px;
-  margin-top: 12px;
-  border: 0;
-  border-radius: 18px;
-  background: #e85d75;
-  color: white;
-  font-size: 2rem;
-  font-weight: 800;
+.hands.dirs { flex-wrap: wrap; }
+.hands.dirs .hand { min-height: 64px; }
+.reveal-row small { display: block; color: var(--muted); font-size: 0.75rem; font-weight: 500; }
+
+.c4 { max-width: 440px; margin: 8px auto 0; }
+.c4-cols, .c4-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
 }
-.bar-track {
-  height: 16px;
+.c4-drop { min-height: 36px; font-weight: 800; padding: 0; }
+.c4-drop.is-quiet { background: transparent; border-color: transparent; }
+.c4-grid { margin-top: 6px; }
+.c4-cell {
+  aspect-ratio: 1;
+  border-radius: 50%;
   background: #efe4d2;
-  border-radius: 99px;
-  overflow: hidden;
 }
-.bar-fill {
-  height: 100%;
+.c4-cell.is-on { background: radial-gradient(circle at 35% 30%, #fff 0 18%, var(--pc, #333) 46%); }
+.c4-cell.is-win { outline: 3px solid #24180f; }
+
+.hockey-canvas {
   width: 100%;
-  transform: scaleX(0);
-  transform-origin: left center;
-  background: var(--pc, var(--gold));
+  height: auto;
+  aspect-ratio: 100 / 62;
+  border-radius: 16px;
+  touch-action: none;
+  display: block;
+  cursor: ew-resize;
 }
-.mash-side { margin: 8px 0; }
-.clock { font-variant-numeric: tabular-nums; font-size: 2rem; text-align: center; margin: 0; }
+.bound-lane { margin: 8px 0; }
+.bound-field {
+  position: relative;
+  height: 168px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: linear-gradient(#d7ecff, #f7fbff);
+}
+.bound-lane.is-mine .bound-field { background: linear-gradient(#fff6e4, #fff); }
+.bound-ball {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  margin-left: -14px;
+  margin-top: -14px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  background: radial-gradient(circle at 35% 35%, #fff, #3d8bfd 55%, #1c4f9c);
+  touch-action: manipulation;
+}
 
 .stand { padding: 8px 12px; margin-top: 8px; }
 

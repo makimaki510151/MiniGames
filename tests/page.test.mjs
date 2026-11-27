@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 import { GAME_LIST } from '../js/games.js';
 
-test('ページに5つの1対1ミニゲームと入口がある', () => {
+test('ページに6つの1対1ミニゲームと入口がある', () => {
   const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   assert.match(html, /js\/main\.js/);
   assert.match(html, /ペア卓/);
