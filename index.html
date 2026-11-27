@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="8人までの部屋で、席に着いて1対1のミニゲーム。部屋の誰でも観戦できます。" />
+  <title>ペア卓</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%237b4b2e' width='32' height='32' rx='6'/%3E%3Crect fill='%231f6b45' x='4' y='6' width='24' height='20' rx='4'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <a class="skip" href="#stage">対局へ</a>
+  <section id="screen-title" class="screen hero">
+    <p class="eyebrow">1対1 · 最大8人</p>
+    <h1 class="wordmark">ペア卓</h1>
+    <p class="lead">部屋に入って、4つの卓のどれかに二人で座る。じゃんけん、反射神経、三目並べ、ハイ＆ロー、連打。座っていない人も、部屋の中ならどの対局も観戦できます。</p>
+    <ul class="game-pills" aria-label="ミニゲーム">
+      <li>じゃんけん</li>
+      <li>反射神経</li>
+      <li>三目並べ</li>
+      <li>ハイ＆ロー</li>
+      <li>連打</li>
+    </ul>
+    <div class="stack">
+      <button id="btn-create" class="btn-primary" type="button">部屋を作る</button>
+      <button id="btn-join" class="btn-ghost" type="button">部屋に入る</button>
+      <button id="btn-offline" class="btn-ghost" type="button">オフラインで練習</button>
+    </div>
+    <details class="help">
+      <summary>遊び方</summary>
+      <ol>
+        <li>ホストが部屋を作り、6文字のコードを渡します。</li>
+        <li>同じバージョンのページから、そのコードで入室します。8人までです。</li>
+        <li>空いている席に着きます。二人そろったら、同じミニゲームを選ぶと始まります。</li>
+        <li>対局中に席を立つと不戦敗です。</li>
+        <li>席にいない人も、卓を選べば観戦できます。対局中の人も、ほかの卓を見に行けます。</li>
+      </ol>
+      <p>通信は MkMk Street と同じく PeerJS（WebRTC）で、状態を決めるのはホストだけです。切断しても同じ名前なら席はしばらく残ります。</p>
+    </details>
+    <p class="fine">ペア卓 <span id="ver"></span></p>
+  </section>
+
+  <section id="screen-join" class="screen" hidden>
+    <form id="join-form" class="panel">
+      <button id="join-back" class="text-btn" type="button">← タイトル</button>
+      <h2 id="join-title">部屋を作る</h2>
+      <label>なまえ
+        <input id="join-name" name="name" type="text" maxlength="12" autocomplete="nickname" placeholder="なまえ（空ならプレイヤー）" />
+      </label>
+      <div>
+        <span class="field-label">色</span>
+        <div id="color-box" class="colors" role="listbox" aria-label="コマの色"></div>
+      </div>
+      <label id="join-code-wrap">部屋コード
+        <input id="join-code" name="room" type="text" maxlength="6" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABC234" />
+      </label>
+      <button id="join-go" class="btn-primary" type="submit">部屋を作る</button>
+      <p id="join-status" class="status" role="status"></p>
+    </form>
+  </section>
+
+  <section id="screen-room" class="screen room" hidden>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow" id="mode-pill">部屋</p>
+        <p class="code" id="room-code">------</p>
+      </div>
+      <p class="pop" id="pop-count">1 / 8</p>
+      <div class="top-actions">
+        <button id="btn-copy" class="btn-small" type="button">コードをコピー</button>
+        <button id="btn-sound" class="btn-small" type="button" aria-pressed="true">音オン</button>
+        <button id="btn-leave" class="btn-small" type="button">退室</button>
+      </div>
+    </header>
+    <p id="room-status" class="room-status" role="status"></p>
+    <div class="lounge">
+      <div>
+        <div id="table-grid" class="table-grid"></div>
+        <ul id="log" class="log"></ul>
+      </div>
+      <div class="stage-wrap">
+        <div id="stage" class="stage" tabindex="-1"></div>
+        <div id="urgent" class="urgent" hidden></div>
+      </div>
+    </div>
+    <div id="roster" class="roster" aria-label="部屋の人"></div>
+    <div id="reconnect" class="reconnect" hidden>
+      <div class="panel">
+        <h2>接続が切れました</h2>
+        <p>同じ名前で入り直すと、席は残っているあいだ戻れます。</p>
+        <div class="stack">
+          <button id="btn-reconnect" class="btn-primary" type="button">再接続</button>
+          <button id="btn-give-up" class="btn-ghost dark" type="button">タイトルへ</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p id="announce" class="sr-only" aria-live="polite"></p>
+  <p id="toast" class="toast" hidden role="status"></p>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
